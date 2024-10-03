@@ -1,293 +1,333 @@
-# 微机原理与接口第二次作业
+# 微机原理与接口第三次作业
+第二次作业文章和代码见文末csdn链接
 
-简单说就是实现了模拟实现ADD，MOV，HLT三个指令。没有考虑实现寻址方式。
+## 前言
 
-## 目标：
+因为发现作为最终目标的第四次作业要求有变，于是将整个工程改为C++工程。~~虽然时候看完全没必要。。。~~为了便于维护和小组合作方便，进行了文件分割，希望有同学愿意帮我完善各部分功能。其实我感觉`Simple8086`这个结构体可以改成一个类。~~面向对象的语言真好。。。~~但是这版结构改起来就加入了`BIU`和`EU`两个类。此次作业完全是一个过程作业，在截止日期前我已经来不及调试好全部功能。一开始想直接完成作业四，但是发现有点庞大，停止搭框架的时候发现已然过于庞大。有现成的`queue`真好。
 
-设计并实现一个简化版的8086 CPU模拟器，该模拟器需能够处理并仿真MOV（数据传送）、ADD（加法）、以及HLT（停机）等基本指令的执行过程。通过模拟CPU的主要组成部分（如寄存器、指令寄存器、程序计数器、控制单元以及数据总线），加深对计算机体系结构和工作原理的理解。
+## 目的：
 
-## 要求与规范：
+通过编写程序模拟8086 CPU的基本运行过程，深入理解CPU的指令执行流程，包括指令的取指、解码和执行，以及实现CPU内部的总线接口单元（BIU）和执行单元（EU）的并行工作机制。本模拟将涵盖三条基础指令：MOV AX, 1、ADD AX, 2 和 HLT，并展示CPU内部寄存器（如AX、BX、CX、DX、IP、FLAGS等）、指令队列、地址总线、数据总线和状态总线的使用。
 
-### **基础组件定义：**
+## 要求：
 
-寄存器：实现至少8个通用寄存器（如AX, BX, CX, DX, SP, BP, SI, DI）和一个指令寄存器（IR）、一个程序计数器（PC/IP，Instruction Pointer）。寄存器大小应设定为16位。
+### 设计CPU结构：
 
-数据总线：定义一条16位的数据总线，用于CPU内部及CPU与外部存储器之间的数据传输。
+总线接口单元（BIU）：负责从模拟的内存中读取指令到指令队列。模拟内存地址由指令指针寄存器（IP）指示。
 
-控制单元：设计逻辑以解析指令，控制指令的执行流程，包括从内存中读取指令、解码指令、执行指令以及更新PC等。
+执行单元（EU）：负责从指令队列中取出指令进行解码和执行。
 
-内存：实现一个简单的内存模型，能够存储指令和数据，至少包含足够空间以加载和执行示例程序。
+> 舍不得把结构体改了。
 
-> 根据c语言特点，用结构体实现`simple8086`的类，也需要手动考虑一下用什么数据类型表示各个组件。内存这里实现的也不太理想，c里的字符串不是一个单独的数据类型，是字符数组，所以这里用的二维数组表示的。~~dalao说string不单独作为一个数据类型更好，我还不是dalao只想直接用string~~8个通用寄存器就是一个int型数组，为了方便起见~~我也不知道有没有真的方便到我~~，我想到宏定义各个数组的名称作为索引？其实总线的表示我觉得是很难模拟的，因为实际上并没有数据在传输。。。会在总线更新的函数里完善打印内容的。
-
-```C
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<stdbool.h>
-
-#define MEMORY_SIZE 256
-#define INSTRUCTION_SIZE 25
-// 16位 8个通用寄存器 
-#define AX 0
-#define BX 1
-#define CX 2
-#define DX 3
-#define SP 4 
-#define BP 5
-#define SI 6
-#define DI 7
+```c++
 typedef struct{
 	unsigned int ip;//指令指针 
-	char memory[MEMORY_SIZE][INSTRUCTION_SIZE];
+	string memory[MEMORY_SIZE];
+	string registers_name[10]={"AX","BX","CX","DX","SP","BP","SI","DI","AH","AL"};
 	int registers[8];
-	
+	bool status_flags[6];
 	int data_bus;
 	bool control_bus_read;
 	bool control_bus_write;
 }simple8086;
 ```
 
+> 这个工程都会被我宏定义寄存器名统治的。还有宏定义指令代码。
 
-
-### **指令集实现：**
-
-MOV指令：实现数据在寄存器之间的移动。例如，`MOV AX, BX` 会将BX寄存器的值复制到AX寄存器中。
-
-ADD指令：实现两个寄存器之间的加法操作，并将结果存回其中一个寄存器。例如，`ADD AX, BX` 会将AX和BX的值相加，并将结果存回AX。
-
-HLT指令：实现停机指令，当CPU执行到HLT指令时，应停止执行后续指令，模拟系统挂起或等待外部中断的状态。程序加载与执行：设计一种方式（如文本文件或硬编码）来加载和执行包含MOV、ADD、HLT等指令的示例程序。程序应能够连续执行指令，直到遇到HLT指令或程序结束。
-
-> 这里就体现了宏定义寄存器和指令集有点蠢，此乃我觉得写一堆`ifelse`不好看就想写成switch的结果。但容我辩解，一直`strcmp`感觉也挺烦的。退一步讲其实应该都是机器码，不过我不知道怎么表示解释器这一步。
-
-```c
-// 指令集 
-#define MOV 0
-#define ADD 1
-#define HLT 2
-void mov(simple8086* cpu,int* reg,int val){
-	printf("将 %d 移动到寄存器AX",val);
-	
-	switch(*reg){
-		case AX:
-			cpu->registers[AX]=val;
-			printf("将 %d 移动到寄存器AX\n",val);
-			break;
-		case BX:
-			cpu->registers[BX]=val;
-			printf("将 %d 移动到寄存器BX\n",val);
-			break;
-		case CX:
-			cpu->registers[CX]=val;
-			printf("将 %d 移动到寄存器CX\n",val);
-			break;
-		case DX:
-			cpu->registers[DX]=val;
-			printf("将 %d 移动到寄存器DX\n",val);
-			break;
-    } 
-}
-
-void add(simple8086* cpu,int* reg,int val){
-	switch (*reg) {
-		case AX:
-			cpu->registers[AX]+=val;
-			printf("给寄存器AX加上%d\n",val);
-			break;
-		case BX:
-			cpu->registers[BX]+=val;
-			printf("给寄存器BX加上%d\n",val);
-			break;
-		case CX:
-			cpu->registers[CX]+=val;
-			printf("给寄存器CX加上%d\n",val);
-			break;
-		case DX:
-			cpu->registers[DX]+=val;
-			printf("给寄存器DX加上%d\n",val);
-			break;
+```c++
+#define InstructionQueueSize 1
+#define CS 0 
+#define DS 1
+#define ES 2
+#define SS 3
+//总线接口单元 负责从内存中取出指令送入指令队列中，等待EU去执行 
+class BIU{
+	public:
+		int registers[4];
+		string registers_name[4]={"CS","DS","ES","SS"}; 
+		queue<string> instructions;
+		int IP;
+		int queue_index = 1;
+		void fetch(simple8086* cpu){
+			printf("正在获取指令队列，(%d/%d)",queue_index,InstructionQueueSize);
+			if(queue_index<=InstructionQueueSize){
+				string instruction_temp = cpu->memory[cpu->ip];
+				instructions.push(instruction_temp);
+				queue_index++;
+				cpu->ip++;
+				printf("\n%d\n",cpu->ip);
+				std::cout << "队列大小: " << instructions.size() << std::endl;
+			}			
+		}
+		string get_instruction(void){
+			if(!instructions.empty()){
+				string instruction = instructions.front();
+				instructions.pop();
+				std::cout << "队列头部元素: " << instructions.front() << std::endl; 
+				return instruction;
+			}
+		}
 		
-	}
-}
-
-void hlt(){
-	printf("停止执行\n");
-	exit(0);
-}
+		int address_adder(int base,int offset){
+			base<<=4;
+			int physical_address=base+offset;
+			return physical_address;
+		} 
+		
+};
+/*
+执行单元
+从biu指令队列中获取指令
+译码
+*/
+class EU{
+	public:
+		int opcode;
+		char source[10];
+		char dest[10];
+		void decode(BIU biu);
+		void excute(simple8086* cpu,BIU biu);
+};
 ```
 
-其实后面调试的时候发现一种~~我觉得~~更好的写法，非常滴简洁，我非常喜欢。
 
-```c
-void mov(simple8086* cpu,int* reg,int* val){
- 	printf("将 %d 移动到寄存器%s\n", 
-           *val, *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" : "DX");
-    cpu->registers[*reg] = *val;
-}
-void add(simple8086* cpu,int* reg,int* val){
-    printf("给寄存器%s加上 %d\n", 
-           *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" : "DX", *val);
-    cpu->registers[*reg] += *val;
-}
-void hlt(){
-	printf("...停止执行\n");
-	exit(0);
-}
-```
 
-### **调试与输出**：
+### 指令队列：
 
-实现一种机制（如控制台输出）来显示每一步执行后的寄存器状态、内存内容以及当前执行的指令，以便于调试和观察CPU的工作过程。
+用于暂存从内存中读取的指令，以便EU在BIU读取新指令时能够继续执行当前指令。寄存器组：实现AX、BX、CX、DX作为通用寄存器，IP作为指令指针寄存器，FLAGS作为状态标志寄存器，以及必要的段寄存器（虽然本模拟不直接涉及段操作，但应提及其存在）。
 
-> 这里就是简单的打印寄存器状态和总线状态的代码
+> 指令队列的实现就是`BIU`里的`queue`。~~其实没实现好。~~还需要标志寄存器嗯嗯于是我直接就想实现一个`ALU`。因为`ALU`在运算出结果时同时置标志位。在`ALU`中其实是`ACC`和一个缓存器存放两个操作数的，我直接简化成`a`和`b`，这样的化把复杂度交给上层调用也就是`excute()`就好了。有野心完成全部的`ALU`处理的算数和逻辑运算指令只是我自己的做不到啊啊啊啊。
+>
+> 我理解执行过程是`decode()`解码操作码，体现在程序里就是把存在“内存数组”中的指令（str）转换成我宏定义的指令（数）。解码操作码之后再根据操作数的寻址方式取后面的数，这部分有一个大坑就是实现寻址方式。对这里理解的并不是很清楚于是暂且搁置，想清楚之前我不会完成`MOV`指令。
+>
+> 真的要实现`AF`吗。。。没想到这个标志位有什么用。。。实现的并不完善，有的标志位我并不清楚何时置`1`，未来会有同学帮我完善的。（确信）
+>
+> ~~这样又少了十来条指令，ohyeah。~~
 
-```c
-// 显示寄存器状态
-void print_reg(simple8086* cpu){
-	printf("寄存器状态：\n");
-	printf("\tAX: %d BX: %d CX: %d DX: %d SP: %d BP: %d SI: %d DI: %d\n\n",
-			cpu->registers[AX],
-			cpu->registers[BX],
-			cpu->registers[CX],
-			cpu->registers[DX],
-			cpu->registers[SP],
-			cpu->registers[BP],
-			cpu->registers[SI],
-			cpu->registers[DI]);
-}
+```c++
+#define HLT 0
+// 算数指令
+#define ADD 1
+#define ADC 2
+#define SUB 3
+#define SBB 4
+#define INC 5
+#define DEC 6
+#define MUL 7
+#define IMUL 8
+#define DIV 9
+#define IDIV 10
+#define NEG 11
+#define CMP 12
 
-// 更新并显示总线状态 
-void update_buses(simple8086* cpu,int* op,int* reg,int* val){
-	printf("总线状态:\n");
-	printf("地址总线：\n");
-	switch(*op){
-		case MOV:
-			cpu->data_bus = *val;
-			cpu->control_bus_read=true;
-			cpu->control_bus_write=false;
-			printf("\tSOURCE: %s DESTINATION: memory[%d]\n",
-                   *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" : "DX",cpu->ip);
-			break;
+#define AND 13
+#define OR 14
+#define XOR 15
+#define NOT 16
+#define TEST 17
+#define SHL 18
+#define SHR 19
+#define SAL 20
+#define SAR 21
+#define ROL 22
+#define ROR 23
+#define RCL 24
+#define RCR 25
+
+#define MOV 100
+// flags 
+#define CF 0
+#define PF 1
+#define AF 2
+#define ZF 3
+#define SF 4
+#define OF 5
+int ALU(simple8086* cpu,int opcode,int a,int b){
+	int res = 0;
+	switch (opcode) {
 		case ADD:
-			cpu->data_bus = *val;
-			cpu->control_bus_read=false;
-			cpu->control_bus_write=true;
-			printf("\tSOURCE: %s DESTINATION: %s\n",
-                   *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" :"DX",
-                   *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" :"DX");
+			res = a + b;
+			if(res>255){cpu->status_flags[CF] = 1;}
 			break;
-		case HLT:
-			cpu->data_bus = 0;
-			cpu->control_bus_read=false;
-			cpu->control_bus_write=false;
-			printf("HLT指令：停止执行\n");
-			break;			
+		case ADC:
+			res = a + b + cpu->status_flags[CF];
+			if(res>255){cpu->status_flags[CF] = 1;}
+			break;
+		case SUB:
+			res = a - b;
+			if(res < 0){cpu->status_flags[CF] = 1;}
+			break;
+		case SBB:
+			res = a - b - cpu->status_flags[CF];
+			if(res < 0){cpu->status_flags[CF] = 1;}
+			break;
+		case INC:
+			res = a + 1;
+			break;
+		case DEC:
+			res = a - 1;
+			break;
+		case MUL:
+			
+			break;
+		case IMUL:
+			res = a * b;
+			if (a > 0 && b > 0 && a > 255 / b) {cpu->status_flags[OF] = 1;}// 正溢出
+			if (a < 0 && b < 0 && a < 255 / b) {cpu->status_flags[OF] = 1;}// 负溢出
+			if ((a > 0 && b < 0 && a < 255/ b) ||(a < 0 && b > 0 && b < 255/ a)) 
+			{cpu->status_flags[OF] = 1;} // 负溢出 
+		case DIV:
+			res = a - 1;
+			break;
+		case IDIV:
+			
+			break;	
+		case NEG:
+			res = 0 - a;
+			break; 
+		case CMP:
+
+			break;
+			
+		case AND:
+			res = a & b;
+			cpu->status_flags[OF] = 0;
+			cpu->status_flags[CF] = 0;
+			break;
+		case OR:
+			res = a | b;
+			cpu->status_flags[OF] = 0;
+			cpu->status_flags[CF] = 0;
+			break;
+		case XOR:
+			res = a ^ b;
+			cpu->status_flags[OF] = 0;
+			cpu->status_flags[CF] = 0;			
+			break;
+		case NOT:
+			res = ~a;
+			cpu->status_flags[OF] = 0;
+			cpu->status_flags[CF] = 0;
+			break;	
+		default:
+			break;
 	}
-	printf("\t控制总线:\n");
-	printf("\t\tREAD：%s WRITE：%s\n",cpu->control_bus_read? "TRUE" : "FALSE",cpu->control_bus_write? "TRUE" : "FALSE");
-	printf("\t数据总线:\n");
-	printf("\t\tDATA:%d\n",cpu->data_bus);
-} 
+	if(res==0){cpu->status_flags[ZF] = 1;}
+	if(res%2==0){cpu->status_flags[PF] = 1;}
+	if(res<0){cpu->status_flags[SF] = 1;}
+	return res;	
+}
+
 ```
 
-> 关于指令的执行的打印输出感觉逻辑并不是很清楚，但姑且完成了。
+### 实现指令集：
 
-```c
-void mov(simple8086* cpu,int* reg,int* val){
-    printf("将 %d 移动到寄存器%s\n", *val, *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" :"DX");
-    cpu->registers[*reg] = *val;
+MOV AX, 1：将立即数1移动到AX寄存器中。ADD AX, 2：将AX寄存器的值增加2。HLT：使CPU进入暂停状态，模拟程序的结束。模拟过程：取指令：BIU根据IP寄存器的值从模拟的内存中取出指令，放入指令队列。IP随后更新以指向下一条指令的地址。
+
+### 解码指令：
+
+EU从指令队列中取出指令，根据指令的操作码调用相应的执行函数。执行指令：执行函数根据指令内容更新CPU内部状态，包括寄存器的值。对于MOV和ADD指令，需要操作数据总线来读取或写入寄存器的值。并行执行：模拟BIU和EU的并行工作，即在EU执行当前指令的同时，BIU可以预取下一条指令到指令队列中，以提高CPU的执行效率。输出：执行过程中输出所有寄存器、总线、标志位、指令队列，内存的状态，以验证指令执行的结果。附加要求（可选）：引入时钟周期的概念，模拟CPU操作的时序，包括取指周期、执行周期等。
+
+> 因为是觉得`C++`功能更强大，比如有我喜欢的单独的`string`数据类型，就直接转成`c++`，结果因为不熟悉其实际实现方法被狠狠坑了。运行结果一片乱码哈哈。比如美滋滋使用字符串相等后面还是得改回去`strcmp(str1,str2)`，而且`strcmp`字符串相等时返回的是`0`。被这样的问题折磨一上午啊啊。
+>
+> 哦还有，C++的字符串分割有点太反人类了。于是在c++中用C的实现方法，才发现`sscanf()`的实现好像是返回`char*`型的，指针啊指针，我真是对你又爱又恨。这次把译码实现逻辑中的指针都改掉了。
+
+```c++
+void EU::decode(BIU biu){
+	char opcode_str[16];
+	string instruction = biu.get_instruction();
+	printf("正在解码指令...");
+	cout<<instruction<<endl;
+	int part_count = sscanf(instruction.c_str(),"%s %s %s",
+							opcode_str,dest,source);
+	if (strcmp(opcode_str,"HLT")==0) {opcode = HLT;} 
+	else if (strcmp(opcode_str,"ADD")==0) {opcode = ADD;} 
+	else if (strcmp(opcode_str,"MOV")==0) {opcode = MOV;} 
+	else {cout << "未知指令" << endl;}
+	printf("操作码%s 目的操作数%s 源操作数%s\n",opcode_str,dest,source);
 }
 
-void add(simple8086* cpu,int* reg,int* val){
-    printf("给寄存器%s加上 %d\n", *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" : "DX", *val);
-    cpu->registers[*reg] += *val;
-}
+```
 
-void hlt(){
-	printf("...停止执行\n");
-	exit(0);
-}
-
-static char instruction_buffer[INSTRUCTION_SIZE];
-char* fetch(simple8086* cpu){
-	strcpy(instruction_buffer,cpu->memory[cpu->ip]);
-	printf("正在从内存地址 %u 获取指令：%s\n", cpu->ip, instruction_buffer);
-	cpu->ip++;
-	return instruction_buffer;
-}
-
-void decode(simple8086* cpu,char* instruction,int* op,int* reg,int* val){
-	printf("正在解码指令..."); 
-	/* 执行部分代码 */
-	printf("操作码%s 寄存器%s 值%d\n",parts[0],parts[1],*val);
-    /* 执行部分代码 */						
-}
-// 显示寄存器状态
-void print_reg(simple8086* cpu){
-	printf("寄存器状态：\n");
-	printf("\tAX: %d BX: %d CX: %d DX: %d SP: %d BP: %d SI: %d DI: %d\n\n",
-			cpu->registers[AX],
-			cpu->registers[BX],
-			cpu->registers[CX],
-			cpu->registers[DX],
-			cpu->registers[SP],
-			cpu->registers[BP],
-			cpu->registers[SI],
-			cpu->registers[DI]);
-}
-
-// 更新并显示总线状态 
-void update_buses(simple8086* cpu,int* op,int* reg,int* val){
-	printf("总线状态:\n");
-	printf("地址总线：\n");
-	switch(*op){
-		case MOV:
-			/* 执行部分代码 */
-			printf("\tSOURCE: %s DESTINATION: memory[%d]\n",
-                   *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" : "DX",cpu->ip);
-			break;
-		case ADD:
-			/* 执行部分代码 */
-			printf("\tSOURCE: %s DESTINATION: %s\n",
-                   *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" :"DX",
-                   *reg == AX ? "AX" : *reg == BX ? "BX" : *reg == CX ? "CX" :"DX");
-			break;
-		case HLT:
-			/* 执行部分代码 */
-			printf("HLT指令：停止执行\n");
-			break;			
+```c++
+void EU::excute(simple8086* cpu,BIU biu){
+	if(opcode<=12){
+		int a,b;
+		switch (opcode) {
+				case HLT:
+					hlt();
+					break;
+				case ADD:
+					if(!strcmp(source,"AX")){a = cpu->registers[AX];}
+					else if(!strcmp(source,"BX")){a = cpu->registers[BX];}
+					else if(!strcmp(source,"CX")){a = cpu->registers[CX];}
+					else if(!strcmp(source,"DX")){a = cpu->registers[DX];}
+					else{a=atoi(source);}
+					if(strcmp(dest,"AX")==0){b = cpu->registers[AX];cpu->registers[AX]= ALU(cpu,ADD,a,b);}
+					else if(strcmp(dest,"BX")==0){b = cpu->registers[BX];cpu->registers[BX]= ALU(cpu,ADD,a,b);}
+					else if(strcmp(dest,"CX")==0){b = cpu->registers[CX];cpu->registers[CX]= ALU(cpu,ADD,a,b);}
+					else if(strcmp(dest,"DX")==0){b = cpu->registers[DX];cpu->registers[DX]= ALU(cpu,ADD,a,b);}
+					printf("给寄存器%s加上%d",dest,a);
+					print_reg(cpu);
+					break;
+				case ADC:
+				
+					break;
+				case SUB:
+					
+					break;
+				case SBB:
+					
+					break;
+				case INC:
+					break;
+				case DEC:
+					break;
+				case MUL:
+					
+					break;
+				case IMUL:
+					break;
+				case DIV:
+				
+					break;
+				case IDIV:
+					
+					break;	
+				case NEG:
+					
+					break; 
+				case CMP:
+		
+					break;
+					
+				case AND:
+					
+					break;
+				case OR:
+					
+					break;
+				case XOR:
+							
+					break;
+				case NOT:
+					
+					break;	
+				default:
+					break;
+			}
 	}
-	printf("\t控制总线:\n");
-	printf("\t\tREAD：%s WRITE：%s\n",cpu->control_bus_read? "TRUE" : "FALSE",cpu->control_bus_write? "TRUE" : "FALSE");
-	printf("\t数据总线:\n");
-	printf("\t\tDATA:%d\n",cpu->data_bus);
-} 
-
-
-// 执行 
-void execute(simple8086* cpu,int* op,int* reg,int* val) {
-	printf("正在执行指令: %s...\n", 
-	       *op == MOV ? "MOV" : *op == ADD ? "ADD" : *op == HLT ? "HLT" : "未知指令");
-	/* 执行部分代码 */
-	update_buses(cpu,op,reg,val);
-	print_reg(cpu);
+	
+	return;
 }
 ```
 
 
 
-本次作业大量参考老师给出的python源码。
+注意：本模拟是高度简化的，旨在帮助学生理解CPU的基本工作原理，而不是实现一个完整的8086 CPU模拟器。在实际编程时，需要根据所选的编程语言（如Python、C/C++等）来具体实现上述功能。考虑到并行执行的复杂性，模拟中的“并行”可能是通过轮询或简单的多线程/协程来实现的，以模拟BIU和EU的同时工作。
 
-此乃参考代码的运行结果。
+## 已经通过测试的其他内容
 
-<img src="C:\Users\Adminstrator\Desktop\临时图片存放处\微机原理2.参考代码运行结果.png" alt="微机原理2.参考代码运行结果" style="zoom: 50%;" />
+寻址方式的实现，具体请看[模拟8086cpu-寻址方式的实现（全）-CSDN博客](https://blog.csdn.net/m0_75163580/article/details/142685329?spm=1001.2014.3001.5502)
 
-此乃本次完成的代码结果。
-
-<img src="C:\Users\Adminstrator\Desktop\临时图片存放处\微机原理2运行结果.png" alt="微机原理2运行结果" style="zoom: 67%;" />
-
-从结果上来看已经基本完成需求了。不过操作码，寄存器和值是三个指针感觉好像不是很好，不过暂时没想到更好的办法，就先这样吧。
-
-## 执行流程图
-
-<img src="C:\Users\Adminstrator\Desktop\临时图片存放处\执行流程图.jpg" alt="执行流程图" style="zoom: 5%;" />
+[模拟8086cpu-微机原理与接口第二次作业-CSDN博客](https://blog.csdn.net/m0_75163580/article/details/142673726?spm=1001.2014.3001.5502)
