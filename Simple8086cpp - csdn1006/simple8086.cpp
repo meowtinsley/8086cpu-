@@ -41,7 +41,7 @@ void print_8binary(int num){
 		if(i==3){printf(" ");}
 	}
 } 
-//¼ÙÉè²ÎÓëÔËËãµÄÊýÊÇ°ËÎ»µÄ 1111 1111 0111 1111=127 ÓÐ·ûºÅ·¶Î§ 1111 1111-0111 1111 -127-127 ÎÞ·ûºÅ·¶Î§ 0-255 
+//¼ÙÉè²ÎÓëÔËËãµÄÊýÊÇ°ËÎ»µÄ 1111 1111 0111 1111=127 ÓÐ·ûºÅ·¶Î§ 1000 0000-0111 1111 -128-127 ÎÞ·ûºÅ·¶Î§ 0-255 
 //todo alu:¸÷ÖÖËãÊõÔËËãµ½µ×ÈçºÎÖÃ±êÖ¾Î»°¡°¡°¡ ¸ã²»¶®cf Ã»¸ãaf 
 /*²»Ïë¸ãAFÎ»µÄ½è¿Ú 
 AFÎ»£ºµ÷Õû±êÖ¾Î»
@@ -50,35 +50,90 @@ flagµÄµÚ4Î»ÊÇAF£¬µ÷Õû±êÖ¾Î»£»·´Ó³¼Ó¼õÔËËãÊ±×îµÍ°ë×Ö½ÚÓÐÎÞ½øÎ»»òÕß½èÎ»¡£×îµÍ°ë×Ö½
 PFÎ»: ÆæÅ¼±êÖ¾Î» ÎªÅ¼ÊýÊ±ÖÃÒ» 
 SFÎ»: ·ûºÅ±êÖ¾Î» Îª¸ºÊýÊ±ÖÃÒ» 
 ZFÎ»£ºÁã±êÖ¾Î» ÎªÁãÖÃÒ»
+CFÎ»£ºÎÞ·ûºÅ¼Ó·¨½øÎ»¼õ·¨½èÎ»  ¼Ó·¨²Ù×÷ÖÐ²úÉú½øÎ»²»Ó°ÏìCF±êÖ¾
+OFÎ»£ºÓÐ·ûºÅÔËËã 
 ¶ÔÓÚSAL SHL¶þÕßµÈÍ¬£¬×î¸ßÎ»ÒÆÈëCF  
 */
+bool get_sign(int8_t num){
+	return (num>>7)&1;
+}
 int ALU(simple8086* cpu,int opcode,int a,int b){
-	int res = 0;
+	int res,temp=0;
+	char* dest;
 	switch (opcode) {
 		case ADD:
-			res = a + b;
-			if(res>255){cpu->status_flags[CF] = 1;}
+			res=a + b;
+			//if(res>=0b10000000){cpu->status_flags[OF]=1;}else{cpu->status_flags[CF]=0;} 
+			// Èç¹ûabÁ½ÊýµÄ·ûºÅÎ»ÏàÍ¬ µ«ºÍ½á¹ûµÄ·ûºÅÎ»²»Í¬¾ÍÊÇ·¢ÉúÁËÒç³ö 
+			if((a>>7)==(b>>7)&&(res>>7)!=(a>>7)){
+				cpu->status_flags[OF]=1;
+			}else{
+				cpu->status_flags[OF]=0;
+			} 
+			if(a+b>0b11111111){
+				cpu->status_flags[CF]=1;
+			}else{
+				res=uint8_t(res);
+				cpu->status_flags[CF]=0;
+			} 
 			break;
 		case ADC:
 			res = a + b + cpu->status_flags[CF];
-			if(res>255){cpu->status_flags[CF] = 1;}
+			if((a>>7)==(b>>7)&&(res>>7)!=(a>>7)){
+				cpu->status_flags[OF]=1;
+			}else{
+				cpu->status_flags[OF]=0;
+			} 
+			if(a+b>0b11111111){
+				cpu->status_flags[CF]=1;
+			}else{
+				res=uint8_t(res);
+				cpu->status_flags[CF]=0;
+			} 
 			break;
 		case SUB:
 			res = a - b;
-			if(res < 0){cpu->status_flags[CF] = 1;}
+			
 			break;
 		case SBB:
 			res = a - b - cpu->status_flags[CF];
-			if(res < 0){cpu->status_flags[CF] = 1;}
+			
 			break;
 		case INC:
+			/* °Ñ²Ù×÷Êý¿´×öÒ»¸öÎÞ·ûºÅ¶þ½øÖÆÊý ²»Ó°ÏìCF
+			0111 1111+1 =1000 0000 ÕýÊý¼ÓÒ»±ä³É¸ºÊý·¢ÉúÒç³ö*/
+			if(a==0b01111111) {cpu->status_flags[OF]=1;}
 			res = a + 1;
 			break;
 		case DEC:
+			/* °Ñ²Ù×÷Êý¿´×öÒ»¸öÎÞ·ûºÅ¶þ½øÖÆÊý ²»Ó°ÏìCF
+			1000 0000-1=0111 1111 -128->127 ¿´×÷ÎÞ·ûºÅÊýÊÇ128¿´×÷ÓÐ·ûºÅÊýÊÇ-128*/
 			res = a - 1;
+			if(a==0b10000000) {cpu->status_flags[OF]=1;}
 			break;
 		case MUL:
-			
+			res = uint8_t(a*b);
+			temp = uint8_t((a*b)>>8);
+			/*Èç¹û³Ë»ý¸ß°ë²¿·Ö²»ÎªÁãÖÃCFºÍOF*/
+			if(temp!=0){
+				cpu->status_flags[OF]=1;
+				cpu->status_flags[CF]=1;
+			}else{
+				cpu->status_flags[OF]=0;
+				cpu->status_flags[CF]=0;				
+			}
+			strcpy(dest,"DX");
+			write_value(cpu,dest,temp);
+			strcpy(dest,"AX");
+			write_value(cpu,dest,res);
+			print_8binary(a);
+			printf("\n³Ë\n");
+			print_8binary(b);
+			printf("\n½á¹û\n");
+			print_8binary(temp);
+			printf(" ");
+			print_8binary(res);
+			printf("\n");
 			break;
 		case IMUL:
 			res = a * b;
@@ -87,7 +142,11 @@ int ALU(simple8086* cpu,int opcode,int a,int b){
 			if ((a > 0 && b < 0 && a < 255/ b) ||(a < 0 && b > 0 && b < 255/ a)){cpu->status_flags[OF] = 1;} // ¸ºÒç³ö
 			break;
 		case DIV:
-			res = a - 1;
+			res = a / b;
+			temp = a % b;
+			printf("%d³ýÒÔ%dÉÌ%d...Óà%d\n",a,b,res,temp);
+			cpu->registers[AX]=res;
+			cpu->registers[DX]=temp;
 			break;
 		case IDIV:
 			
@@ -154,14 +213,12 @@ int ALU(simple8086* cpu,int opcode,int a,int b){
 			print_8binary(res); 
 			cpu->status_flags[CF] = b;
 			break;
-		
-				
 		default:
 			break;
 	}
 	if(res==0){cpu->status_flags[ZF] = 1;}else{cpu->status_flags[ZF] = 0;}
 	if(res%2==0){cpu->status_flags[PF] = 1;}else{cpu->status_flags[PF] = 0;}
-	if(res<0){cpu->status_flags[SF] = 1;}else{cpu->status_flags[SF] = 0;}
+	if(int8_t(res)<0){cpu->status_flags[SF] = 1;}else{cpu->status_flags[SF] = 0;}
 	return res;	
 }
 
@@ -215,7 +272,7 @@ void EU::decode(BIU& biu,simple8086* cpu){
 		else if (strcmp(opcode_str, "MOV") == 0){opcode = MOV;} 
 		else if (strcmp(opcode_str, "PUSH") == 0){opcode = PUSH;} 
 		else if (strcmp(opcode_str, "POP") == 0){opcode = POP;} 
-		//else if (strcmp(opcode_str, "XCHG") == 0){opcode = XCHG;}
+		else if (strcmp(opcode_str, "XCHG") == 0){opcode = XCHG;}
 		else {std::cout << "Î´ÖªÖ¸Áî" << std::endl;}
 		printf("²Ù×÷Âë%s Ä¿µÄ²Ù×÷Êý%s Ô´²Ù×÷Êý%s\n",opcode_str,dest,source);
 		excute(cpu,biu);
@@ -224,6 +281,7 @@ void EU::decode(BIU& biu,simple8086* cpu){
 }
 
 void EU::excute(simple8086* cpu,BIU biu){
+	printf("ÕýÔÚÖ´ÐÐÖ¸Áî...");
 	if(opcode<MOV){
 		int a,b;
 		// ËãÊýÂß¼­ÔËËãÖ¸Áî 
@@ -251,12 +309,19 @@ void EU::excute(simple8086* cpu,BIU biu){
 				case DEC:
 					break;
 				case MUL:
-					
+					a = get_value(dest,cpu);
+					b = cpu->registers[AX];
+					printf("¼Ä´æÆ÷AXÖÐµÄÖµ%d³Ë%d\n",b,a);	
+					ALU(cpu,MUL,a,b);
+					//ALU(cpu,MUL,get_value(dest,cpu),cpu->registers[AX]);
 					break;
 				case IMUL:
 					break;
 				case DIV:
-				
+					a = (cpu->registers[DX]<<8) + cpu->registers[AX]; 
+					b = get_value(dest,cpu);
+					printf("¼Ä´æÆ÷DX:AXÖÐµÄÖµ%d³ýÒÔ%d\n",a,b);
+					ALU(cpu,DIV,a,b);
 					break;
 				case IDIV:
 					
@@ -295,13 +360,13 @@ void EU::excute(simple8086* cpu,BIU biu){
 
 				case SHL:
 				case SAL:
-					a = get_value(source,cpu);
+					a = get_value(dest,cpu);
 					b = 0;
 					write_value(cpu,dest,ALU(cpu,SAL,a,b));
 					break;	
 				case SHR:
 				case SAR:
-					a = get_value(source,cpu);
+					a = get_value(dest,cpu);
 					b = 0;
 					write_value(cpu,dest,ALU(cpu,SAR,a,b));		
 					break;											
@@ -327,6 +392,7 @@ void EU::excute(simple8086* cpu,BIU biu){
 				write_value(cpu,dest,value);
 				break;
 			case XCHG:
+				printf("ÕýÔÚ½»»»%s %s",source,dest);
 				temp = get_value(dest,cpu);
 				write_value(cpu,dest,get_value(source,cpu));
 				write_value(cpu,source,temp);

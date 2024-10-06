@@ -129,7 +129,7 @@ class BIU{
 		bool instruction_queue_isempty(void){
 			return instructions.empty();
 		}
-		
+		// 这个函数没实际用到，但是BIU内部确实有一个地址计算器 
 		int address_adder(int base,int offset){
 			base<<=4;
 			int physical_address=base+offset;
